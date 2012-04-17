@@ -4,13 +4,18 @@ import os
 import sys
 import time
 import gevent
+import signal
+import logging
 import traceback
 import subprocess
 
 RELOAD_KEY = '_PYTHON_RELOADER_SHOULD_RUN'
 
-def install_supervisor(poll_interval, extra_files=None):
+log = logging.getLogger(__name__)
+
+def install_reloader(poll_interval, extra_files=None):
     if RELOAD_KEY in os.environ:
+        log.info('Starting monitored server')
         # We are in the (monitored) subprocess, so we will launch a monitor
         # greenlet and return as usual.
         mon = Monitor(poll_interval=poll_interval)
@@ -23,14 +28,30 @@ def install_supervisor(poll_interval, extra_files=None):
         # (monitored) subprocess over and over again as long as the return code
         # is 3 (which the monitor raises). This code never
         # returns.
+        log.info('Starting server with auto-reload')
         new_environ = dict(os.environ)
         new_environ[RELOAD_KEY] = '1'
         args = [sys.executable] + sys.argv
-        while True:
-            proc = subprocess.Popen(args, env=new_environ)
+        os._exit(run_monitor_process(args, new_environ))
+
+def run_monitor_process(args, environ):
+    while True:
+        try:
+            _turn_sigterm_into_systemexit()
+            proc = subprocess.Popen(args, env=environ)
             exit_code = proc.wait()
-            if exit_code != 3:
-                os._exit(exit_code)
+            proc = None
+        except KeyboardInterrupt:
+            log.info('^C caught in monitor process')
+            return 1
+        finally:
+            if proc is not None:
+                try:
+                    os.kill(proc.pid, signal.SIGTERM)
+                except (OSError, IOError):
+                    pass
+        if exit_code != 3:
+            os._exit(exit_code)
     
 class Monitor(object): # pragma: no cover
     """
@@ -121,4 +142,16 @@ class Monitor(object): # pragma: no cover
                 print("%s changed; reloading..." % filename)
                 return False
         return True
+
+def _turn_sigterm_into_systemexit(): # pragma: no cover
+    """
+    Attempts to turn a SIGTERM exception into a SystemExit exception.
+    """
+    try:
+        import signal
+    except ImportError:
+        return
+    def handle_term(signo, frame):
+        raise SystemExit
+    signal.signal(signal.SIGTERM, handle_term)
 

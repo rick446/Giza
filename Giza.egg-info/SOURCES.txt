@@ -7,3 +7,6 @@ Giza.egg-info/entry_points.txt
 Giza.egg-info/not-zip-safe
 Giza.egg-info/top_level.txt
 giza/__init__.py
+giza/monitor.py
+giza/render.py
+giza/resources.py

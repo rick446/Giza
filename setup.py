@@ -22,5 +22,7 @@ setup(name='Giza',
       ],
       entry_points="""
       # -*- Entry points: -*-
+      [easy_widgets.resources]
+      giza=giza.resources:register_ew_resources
       """,
       )
